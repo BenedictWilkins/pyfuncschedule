@@ -36,12 +36,9 @@ foo() @ [1]:*
 ### Example 4 - Nesting Schedules
 
 It is possible to nest schedules to acheive more complex timings.
-
 ```
 foo() @ [[1,2]:2]:2
 ```
-
-`foo` will be executed at `t=1,3,4,` and continue until the schedule runner is terminated.
 We can unpack this schedule as follows:
 ```
 [1,2]:2 -> [1,3,4,6]
