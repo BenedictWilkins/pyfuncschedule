@@ -3,6 +3,7 @@ import inspect
 from dataclasses import dataclass
 from typing import List, Any
 from pyparsing import (
+    restOfLine,
     Optional,
     Forward,
     Dict,
@@ -140,9 +141,11 @@ def action_with_schedule():
     _, _, func_call = collections_and_func_tokens(primitive)
     schedule = schedule_token(func_call)
 
+    comment = "#" + restOfLine
+
     # Attach the parse action to your grammar
     action_schedule = Group(func_call - AT - schedule)
-    return Group(OneOrMore(action_schedule))
+    return Group(OneOrMore(action_schedule)).ignore(comment)
 
 
 # if __name__ == "__main__":

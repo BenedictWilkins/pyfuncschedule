@@ -179,6 +179,20 @@ class TestActionScheduleExpr(unittest.TestCase):
             ],
         )
 
+    def test_comment(self):
+        result1 = self.parser.parseString(
+            """# comments \n foo()@[] \n # comments \n # comments """
+        )[0].as_list()
+        self.assertEqual(
+            result1,
+            [
+                [
+                    FuncCall(identifier="foo", arguments=[]),
+                    Schedule(schedule=[0], repeat=1),
+                ]
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

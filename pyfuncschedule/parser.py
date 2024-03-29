@@ -30,11 +30,21 @@ class VFuncCall:
         return str(self)
 
 
+def forever_iter():
+    while True:
+        yield None
+
+
 class VSchedule:
 
     def __init__(self, intervals, repeat):
         self._intervals = intervals
         self._repeat = repeat
+        assert self._repeat != 0  # TODO check this in the parser early...
+        if self._repeat >= 0:
+            self._repeat_iter = range(self._repeat)
+        else:
+            self._repeat_iter = forever_iter()
 
     def __str__(self):
         return f"[{','.join(str(arg) for arg in self._intervals)}]:{self._repeat}"
@@ -43,7 +53,7 @@ class VSchedule:
         return str(self)
 
     def __iter__(self):
-        for _ in range(self._repeat):
+        for _ in self._repeat_iter:
             for interval in self._intervals:
                 if isinstance(interval, VSchedule):
                     yield from interval

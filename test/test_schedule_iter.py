@@ -34,6 +34,20 @@ class TestActionScheduleIter(unittest.TestCase):
         self.assertListEqual(intervals, [1.0, 2.0, 1.0, 2.0, None])
         self.assertEqual(self.state, 8)
 
+    def test_forever_iter(self):
+        parser = ScheduleParser()
+
+        def foo1(arg):
+            self.state += arg
+
+        parser.register_action(foo1)
+        schedule = """foo1(2)@[1,2]:*"""
+        result_iter = iter(parser.resolve(parser.parse(schedule))[0])
+        intervals = [next(result_iter)[0] for i in range(4)]
+        self.assertListEqual(intervals, [1.0, 2.0, 1.0, 2.0])
+        # the "last" (4th) action is not executed here...
+        self.assertEqual(self.state, 6)
+
     def test_nested_iter(self):
         parser = ScheduleParser()
 
