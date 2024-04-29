@@ -1,9 +1,10 @@
-import ast
+import asyncio
 import inspect
-from typing import Callable, List, Union, Any
-from random import uniform
+from typing import Callable, List, Any
+from .grammar import action_with_schedule, FuncCall as GFuncCall, Schedule as GSchedule
+from .async_iter import _AsyncScheduleIterator
 
-from .grammar import action_with_schedule, FuncCall, Schedule
+__all__ = ("ScheduleParser", "parse", "resolve", "Schedule")
 
 
 class VFuncCall:
@@ -13,15 +14,24 @@ class VFuncCall:
         self._name = name
         self._arguments = arguments
 
-    def _resolve_arguments(self):
-        for x in self._arguments:
-            if isinstance(x, VFuncCall):
-                yield x()
-            else:
-                yield x
+    def _resolve(self, args: List[Any]):
+        for arg in args:
+            yield self._resolve_arg(arg)
+
+    def _resolve_arg(self, arg: Any):
+        if isinstance(arg, (str, float, int, bool)):
+            return arg
+        elif isinstance(arg, VFuncCall):
+            return arg()
+        elif isinstance(arg, (list, tuple)):
+            return type(arg)(self._resolve_arg(x) for x in arg)
+        elif isinstance(arg, dict):
+            return {self._resolve_arg(k): self._resolve_arg(v) for k, v in arg.items()}
+        assert False  # this should never happen...
 
     def __call__(self):
-        return self._func(*self._resolve_arguments())
+        # print("RESOLVE!")
+        return self._func(*self._resolve(self._arguments))
 
     def __str__(self):
         return f"{self._name}({','.join(str(arg) for arg in self._arguments)})"
@@ -71,10 +81,11 @@ class VActionSchedule:
 
     def __iter__(self):
         _iter = iter(self._schedule)
-        yield (next(_iter), None)  # get initial interval to schedule next call
         for interval in _iter:
-            yield (interval, self._action())
-        yield (None, self._action())  # final call to action
+            yield (interval, self._action)
+
+    def stream(self):
+        return _AsyncScheduleIterator(self)
 
     def __str__(self):
         return f"{self._action}@{self._schedule}"
@@ -82,132 +93,139 @@ class VActionSchedule:
     def __repr__(self):
         return str(self)
 
-    async def __aiter__(self):
-        import asyncio
-
-        try:
-            _iter = iter(self)
-            # initial wait
-            wait_time, _ = next(_iter)  # the first action is always None
-            await asyncio.sleep(wait_time)
-
-            while True:
-                wait_time, action = next(_iter)
-                if wait_time is None:
-                    yield action
-                    raise StopIteration
-                future = asyncio.sleep(wait_time)
-                yield action
-                await future
-        except StopIteration:
-            pass
-
-    async def asyncio_runner(self):
-        """
-        This is a simple schedule runner that uses `asyncio`.
-        Given the nature of asyncio there is no guarentee that actions will execute on time,
-        especially if there are long-running tasks in the asycnio event loop.
-        """
-        async for _ in self:
-            pass
-
 
 class ScheduleParser:
-    def __init__(self, parser=None):
-        self._parser = action_with_schedule() if parser is None else parser
+    def __init__(
+        self,
+    ):
+        self._parser = action_with_schedule()
         self._allowed_functions = {}
         self._allowed_actions = {}
+
+    def get_allowed_actions(self):
+        return self._allowed_actions
+
+    def get_allowed_functions(self):
+        return self._allowed_functions
 
     def register_action(self, action: Callable, name: str = None):
         """Add an action to the list of allowed actions."""
         if name is None:
             name = action.__name__
+        if name in self._allowed_actions:
+            raise ValueError(f"An action with {name} is already registered.")
         self._allowed_actions[name] = action
 
     def register_function(self, func: Callable, name: str = None):
         """Add a function to the list of allowed functions."""
         if name is None:
             name = func.__name__
+        if name in self._allowed_functions:
+            raise ValueError(f"A function with {name} is already registered.")
         self._allowed_functions[name] = func
 
     def parse(self, schedule: str):
-        return self._parser.parseString(
-            schedule,
-            parse_all=True,
-        )[0].as_list()
+        return parse(schedule, parser=self._parser)
 
-    def resolve(self, parse_result):
-        return list(self._resolve_iter(parse_result))
+    def resolve(self, parse_result) -> List["Schedule"]:
+        return resolve(parse_result, self._allowed_actions, self._allowed_functions)
 
-    def _resolve_iter(self, parse_result):
-        for action, schedule in parse_result:
-            raction = ScheduleParser.resolve_action(
-                action, self._allowed_actions, self._allowed_functions
-            )
-            rschedule = ScheduleParser.resolve_schedule(
-                schedule, self._allowed_functions
-            )
-            yield VActionSchedule(raction, rschedule)
 
-    @staticmethod
-    def resolve_schedule(schedule, valid_funcs):
-        repeat = ScheduleParser.resolve_repeat(schedule.repeat, valid_funcs)
-        intervals = list(
-            ScheduleParser.resolve_arguments(schedule.schedule, valid_funcs)
+# TODO type hints for this
+def parse(
+    schedule: str,
+    parser=None,
+):
+    parser = action_with_schedule() if parser is None else parser
+    return parser.parseString(schedule, parse_all=True)[0].as_list()
+
+
+def resolve(parse_result, actions, functions) -> List["Schedule"]:
+    return list(_resolve_iter(parse_result, actions, functions))
+
+
+def _resolve_iter(parse_result, allowed_actions, allowed_functions):
+    for action, schedule in parse_result:
+        raction = resolve_action(action, allowed_actions, allowed_functions)
+        rschedule = resolve_schedule(schedule, allowed_functions)
+        yield VActionSchedule(raction, rschedule)
+
+
+def resolve_schedule(schedule, valid_funcs):
+    repeat = resolve_repeat(schedule.repeat, valid_funcs)
+    intervals = list(resolve_arguments(schedule.schedule, valid_funcs))
+    return VSchedule(intervals, repeat)
+
+
+def resolve_action(action, valid_actions, valid_funcs):
+    name, args = action.identifier, action.arguments
+    func = validate_func(name, args, valid_actions)
+    args = list(resolve_arguments(args, valid_funcs))
+    return VFuncCall(name, args, func)
+
+
+def resolve_func(func_call, valid_funcs):
+    name, args = func_call.identifier, func_call.arguments
+    func = validate_func(name, args, valid_funcs)
+    args = list(resolve_arguments(args, valid_funcs))
+    return VFuncCall(name, args, func)
+
+
+def resolve_repeat(repeat, valid_funcs):
+    if isinstance(repeat, GFuncCall):
+        return resolve_func(repeat, valid_funcs)
+    else:
+        return repeat
+
+
+def resolve_arg(arg, valid_funcs):
+    if isinstance(arg, GFuncCall):
+        return resolve_func(arg, valid_funcs)
+    elif isinstance(arg, GSchedule):
+        return resolve_schedule(arg, valid_funcs)
+    elif isinstance(arg, (str, int, float, bool)):
+        return arg
+    elif isinstance(arg, (list, tuple)):
+        return type(arg)(resolve_arguments(arg, valid_funcs))
+    elif isinstance(arg, dict):
+        return {
+            resolve_arg(k, valid_funcs): resolve_arg(v, valid_funcs)
+            for k, v in arg.items()
+        }
+    else:
+        raise ValueError(
+            f"Invalid arg: {arg} of type {type(arg)} found during schedule resolution."
         )
-        return VSchedule(intervals, repeat)
 
-    @staticmethod
-    def resolve_action(action, valid_actions, valid_funcs):
-        name, args = action.identifier, action.arguments
-        func = ScheduleParser.validate_func(name, args, valid_actions)
-        args = list(ScheduleParser.resolve_arguments(args, valid_funcs))
-        return VFuncCall(name, args, func)
 
-    @staticmethod
-    def resolve_func(func_call, valid_funcs):
-        name, args = func_call.identifier, func_call.arguments
-        func = ScheduleParser.validate_func(name, args, valid_funcs)
-        args = list(ScheduleParser.resolve_arguments(args, valid_funcs))
-        return VFuncCall(name, args, func)
+def resolve_arguments(arguments, valid_funcs):
+    for arg in arguments:
+        yield resolve_arg(arg, valid_funcs)
 
-    @staticmethod
-    def resolve_repeat(repeat, valid_funcs):
-        if isinstance(repeat, FuncCall):
-            return ScheduleParser.resolve_func(repeat, valid_funcs)
-        else:
-            return repeat
 
-    @staticmethod
-    def resolve_arguments(arguments, valid_funcs):
-        for arg in arguments:
-            if isinstance(arg, FuncCall):
-                yield ScheduleParser.resolve_func(arg, valid_funcs)
-            elif isinstance(arg, Schedule):
-                yield ScheduleParser.resolve_schedule(arg, valid_funcs)
-            else:
-                yield arg
+def validate_func(name, args, valid_funcs):
+    if name not in valid_funcs:
+        raise ValueError(f"Unregistered function: {name}")
+    func = valid_funcs[name]
 
-    @staticmethod
-    def validate_func(name, args, valid_funcs):
-        if name not in valid_funcs:
-            raise ValueError(f"Unregistered function: {name}")
-        func = valid_funcs[name]
+    sig = inspect.signature(func)
+    # Determine if this is an instance method (which has 'self' as the first parameter)
+    params = list(sig.parameters.values())
+    if params and params[0].name == "self":
+        # Adjust the signature by excluding the first parameter ('self')
+        sig = sig.replace(parameters=params[1:])
+    # Validate the arguments against the function's signature
+    try:
+        sig.bind(*args)
+    except TypeError as e:
+        error_msg = (
+            f"Argument mismatch for function '{name}': {e}\n"
+            f"Expected signature: {sig}\n"
+            f"Provided arguments: {[arg for arg in args]}"
+        )
+        raise ValueError(error_msg) from e
+    return func
 
-        sig = inspect.signature(func)
-        # Determine if this is an instance method (which has 'self' as the first parameter)
-        params = list(sig.parameters.values())
-        if params and params[0].name == "self":
-            # Adjust the signature by excluding the first parameter ('self')
-            sig = sig.replace(parameters=params[1:])
-        # Validate the arguments against the function's signature
-        try:
-            sig.bind(*args)
-        except TypeError as e:
-            error_msg = (
-                f"Argument mismatch for function '{name}': {e}\n"
-                f"Expected signature: {sig}\n"
-                f"Provided arguments: {[arg for arg in args]}"
-            )
-            raise ValueError(error_msg) from e
-        return func
+
+# Type alias for schedule
+Schedule = VActionSchedule
