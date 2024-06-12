@@ -54,10 +54,7 @@ The syntax for this is the same as a function call in python.
 foo() @ [uniform(0,1)]:*
 ```
 
-This will execute `foo()` at some time sampled uniformly in the interval `[0,1]`. The `uniform` function is called repeatedly to produce new random intervals. The function is called to produce its value at the moment of the last execution of `foo`. If the function call is the first element in the schedule, it will be called at time `0` (`foo` is not executed at this time).
-
-
-There are a number of useful built-in functions (see section TODO).
+This will execute `foo()` at some time sampled uniformly in the interval `[0,1]`. The `uniform` function is called repeatedly to produce new random intervals. The function is called to produce its value at the moment of the last execution of `foo`. If the function call is the first element in the schedule, it will be called at time `0` (`foo` is typically not executed at this time).
 
 ### Example 6 - Function Data
 
@@ -70,7 +67,7 @@ foo(["a","b"]) @ [bar(baz(1), baz(2))]:*
 
 The built-in `time()` function will return the time since the schedule began, it can be useful in some custom function implementations, for example: 
 
-python```
+```
 def baz(t):
   return (t+1)*2
 ```
@@ -81,9 +78,9 @@ foo() @ [baz(time())]:*
 Note that `time()` will always resolve to the time of the most recent call to `foo`, or at `t=0` if it is used at the beginning of the schedule.
 
 
-## Parsing and Running Func Schedules
+## Parsing and running func schedules
 
-
+DOCUMENTATION COMING SOON...
 
 
 
