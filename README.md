@@ -63,21 +63,6 @@ Many of the Python built-in data types: 'int','float','bool','str','list','dict'
 foo(["a","b"]) @ [bar(baz(1), baz(2))]:*
 ```
 
-### Example 7 - `time()`
-
-The built-in `time()` function will return the time since the schedule began, it can be useful in some custom function implementations, for example: 
-
-```
-def baz(t):
-  return (t+1)*2
-```
-```
-foo() @ [baz(time())]:*
-```
-
-Note that `time()` will always resolve to the time of the most recent call to `foo`, or at `t=0` if it is used at the beginning of the schedule.
-
-
 ## Parsing and running func schedules
 
 DOCUMENTATION COMING SOON...
