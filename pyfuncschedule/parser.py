@@ -84,7 +84,23 @@ class VActionSchedule:
         for interval in _iter:
             yield (interval, self._action)
 
+    def __aiter__(self):
+        raise NotImplementedError(
+            "TODO this should function similarly to __iter__ except await before returning each (interval,action)"
+        )
+
     def stream(self):
+        """Returns an asynchronous iterator that will await each interval before calling the action associated with this schedule.
+
+        Example:
+        ```
+            async for x in schedule.stream():
+                print(x) # the result of taking each action
+        ```
+
+        Returns:
+            `_AsyncScheduleIterator`: async iterator
+        """
         return _AsyncScheduleIterator(self)
 
     def __str__(self):
