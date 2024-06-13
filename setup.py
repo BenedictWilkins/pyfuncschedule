@@ -9,7 +9,7 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    url="https://github.com/BenedictWilkins/pyfuncschedule"
+    url="https://github.com/BenedictWilkins/pyfuncschedule",
     install_requires=["pyparsing", "aiostream"],
     python_requires=">=3.10",
     classifiers=[
