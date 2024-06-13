@@ -2,6 +2,10 @@
 
 A package that allows python functions to be repeatedly run according to a given schedule composed of a series of time intervals.
 
+## Quick install
+
+```pip install pyfuncschedule```
+
 ## Usage & Syntax
 
 Function schedules are written as config files with a custom format. There is not as yet a standardised file extention for such configuration files, we might use `.fsch`.
