@@ -9,6 +9,6 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    install_requires=["pyparsing"],
+    install_requires=["pyparsing", "aiostream"],
     python_requires=">=3.10",
 )

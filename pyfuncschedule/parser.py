@@ -1,4 +1,4 @@
-import asyncio
+import aiostream
 import inspect
 from typing import Callable, List, Any
 from .grammar import action_with_schedule, FuncCall as GFuncCall, Schedule as GSchedule
@@ -141,10 +141,61 @@ class ScheduleParser:
         self._allowed_functions[name] = func
 
     def parse(self, schedule: str):
+        """Parses the given schedule.
+
+        Args:
+            schedule (str): schedule to parse.
+
+        Returns:
+            list: parse result
+
+        Example:
+        ```
+            parser = ScheduleParser()
+            parser.register_action(foo)
+            schedules_str = "foo()@[1]:3"
+            schedules = parser.resolve(parser.parse(schedule_str))
+        ```
+        """
         return parse(schedule, parser=self._parser)
 
     def resolve(self, parse_result) -> List["Schedule"]:
+        """Resolves callables in the given collection of schedules.
+
+        Args:
+            parse_result (str): schedule to parse.
+
+        Returns:
+            List[Schedule] : resolved schedules
+
+        Example:
+        ```
+            parser = ScheduleParser()
+            parser.register_action(foo)
+            schedules_str = "foo()@[1]:3"
+            schedules = parser.resolve(parser.parse(schedule_str))
+        ```
+        """
         return resolve(parse_result, self._allowed_actions, self._allowed_functions)
+
+    def stream(self, schedules: List["Schedule"]) -> aiostream.core.Streamer:
+        """Creates an `aiostream` stream that combines all provided schedules into one, the stream can be asynchronously iterated over.
+
+        Args:
+            schedules (List[Schedule]): schedules to combine.
+
+        Returns:
+            aiostream.core.Streamer: async stream that combines all schedules.
+
+        Example:
+        ```
+            schedules = parser.resolve(parser.parse(schedule_str))
+            async with parser.stream(schedules) as stream:
+                async for x in stream:
+                    print(x)
+        ```
+        """
+        return stream(schedules)
 
 
 # TODO type hints for this
@@ -154,6 +205,11 @@ def parse(
 ):
     parser = action_with_schedule() if parser is None else parser
     return parser.parseString(schedule, parse_all=True)[0].as_list()
+
+
+def stream(schedules: List["Schedule"]):
+    streams = [sch.stream() for sch in schedules]
+    return aiostream.stream.merge(*streams).stream()
 
 
 def resolve(parse_result, actions, functions) -> List["Schedule"]:
